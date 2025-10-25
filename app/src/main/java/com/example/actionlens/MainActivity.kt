@@ -1,97 +1,148 @@
 package com.example.actionlens
 
 import android.Manifest
+import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
+import android.graphics.SurfaceTexture
 import android.os.Bundle
+import android.view.OrientationEventListener
 import android.view.SurfaceHolder
-import android.view.SurfaceView
-import android.widget.Button
+import android.view.animation.DecelerateInterpolator
 import android.widget.Toast
-import androidx.activity.ComponentActivity
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.app.ActivityCompat
-import androidx.core.app.ActivityCompat.recreate
 import androidx.core.content.ContextCompat
+import com.example.actionlens.databinding.ActivityMainBinding
 
 class MainActivity : AppCompatActivity() {
 
-    private var camera: CameraController? = null
+    private lateinit var binding: ActivityMainBinding
     private var renderer: ActionLensRenderer? = null
+    private var cameraController: CameraController? = null
+
+    private val requiredPermissions = arrayOf(Manifest.permission.CAMERA)
+
+    // Orientation handling for UI rotation
+    private var orientationListener: OrientationEventListener? = null
+    private var currentUiRotation = -1
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // 🔒 Lock screen orientation so system never flips the GL surface
+        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LOCKED
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_main)
 
-        val surfaceView = findViewById<SurfaceView>(R.id.glSurface)
-        val settingsButton = findViewById<Button>(R.id.settingsButton)
+        binding = ActivityMainBinding.inflate(layoutInflater)
+        setContentView(binding.root)
 
-        // Ask for camera permission
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
-            != PackageManager.PERMISSION_GRANTED
-        ) {
-            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.CAMERA), 1)
-            return
+        // Placeholder: later this button will open the settings overlay
+        binding.settingsButton.setOnClickListener {
+            Toast.makeText(this, "Settings placeholder", Toast.LENGTH_SHORT).show()
         }
 
-        surfaceView.holder.addCallback(object : SurfaceHolder.Callback {
+        // Surface lifecycle: start/stop renderer and camera
+        binding.glSurface.holder.addCallback(object : SurfaceHolder.Callback {
             override fun surfaceCreated(holder: SurfaceHolder) {
-                // Step 1: Create renderer (owns GL + SurfaceTexture)
-                renderer = ActionLensRenderer(holder.surface)
-
-                // Step 2: Wait until renderer’s SurfaceTexture is ready before opening camera
-                renderer!!.onSurfaceTextureReady = { st ->
-                    camera = CameraController(this@MainActivity) { st }
-                    camera!!.open()
-                }
-
-                // Step 3: Start renderer thread
-                renderer!!.start()
+                startRendererAndCamera()
             }
 
             override fun surfaceDestroyed(holder: SurfaceHolder) {
-                camera?.close()
-                renderer?.stop()
+                stopRendererAndCamera()
             }
 
             override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {}
         })
 
-        // Optional Settings button for testing PiP controls
-        settingsButton.setOnClickListener {
-            renderer?.let {
-                when (it.pipCorner) {
-                    ActionLensRenderer.PipCorner.TOP_RIGHT ->
-                        it.pipCorner = ActionLensRenderer.PipCorner.BOTTOM_LEFT
-                    ActionLensRenderer.PipCorner.BOTTOM_LEFT ->
-                        it.pipCorner = ActionLensRenderer.PipCorner.BOTTOM_RIGHT
-                    ActionLensRenderer.PipCorner.BOTTOM_RIGHT ->
-                        it.pipCorner = ActionLensRenderer.PipCorner.TOP_LEFT
-                    ActionLensRenderer.PipCorner.TOP_LEFT ->
-                        it.pipCorner = ActionLensRenderer.PipCorner.HIDDEN
-                    ActionLensRenderer.PipCorner.HIDDEN ->
-                        it.pipCorner = ActionLensRenderer.PipCorner.TOP_RIGHT
+        // Initialize orientation listener to rotate only the UI (not the feed)
+        orientationListener = object : OrientationEventListener(this) {
+            override fun onOrientationChanged(orientation: Int) {
+                if (orientation == ORIENTATION_UNKNOWN) return
+                val target = quantizeDegrees(orientation)
+                if (target != currentUiRotation) {
+                    currentUiRotation = target
+                    rotateUiTo(target)
                 }
-                Toast.makeText(this, "PiP position: ${it.pipCorner}", Toast.LENGTH_SHORT).show()
             }
         }
     }
 
-    override fun onRequestPermissionsResult(
-        requestCode: Int,
-        permissions: Array<out String>,
-        grantResults: IntArray
-    ) {
-        if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-            recreate()
-        } else {
-            Toast.makeText(this, "Camera permission required", Toast.LENGTH_LONG).show()
+    // --- Camera + Renderer setup ---
+
+    private fun startRendererAndCamera() {
+        if (!allPermissionsGranted()) {
+            requestPermissions(requiredPermissions, 10)
+            return
         }
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+
+        val width = 1280
+        val height = 720
+        val fps = 30
+        val delay = 3
+
+        val surface = binding.glSurface.holder.surface
+        renderer = ActionLensRenderer(surface, fps, delay, width, height).apply {
+            onSurfaceTextureReady = { texture ->
+                startCamera(texture, width, height)
+            }
+            start()
+        }
+    }
+
+    private fun startCamera(surfaceTexture: SurfaceTexture, width: Int, height: Int) {
+        cameraController?.close()
+        cameraController = CameraController(this) { surfaceTexture }
+        cameraController?.open()
+    }
+
+    private fun stopRendererAndCamera() {
+        cameraController?.close()
+        cameraController = null
+        renderer?.stop()
+        renderer = null
+    }
+
+    // --- Permissions ---
+    private fun allPermissionsGranted(): Boolean {
+        return requiredPermissions.all {
+            ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED
+        }
+    }
+
+    // --- UI rotation helpers ---
+    /** Snap sensor degrees to nearest 0/90/180/270 quadrant. */
+    private fun quantizeDegrees(deg: Int): Int {
+        return when {
+            inRangeWrap(deg, 315, 360) || inRangeWrap(deg, 0, 45) -> 0
+            inRangeWrap(deg, 45, 135) -> 90
+            inRangeWrap(deg, 135, 225) -> 180
+            else -> 270 // 225..315
+        }
+    }
+
+    private fun inRangeWrap(v: Int, start: Int, end: Int): Boolean {
+        return if (start <= end) (v in start..end) else (v >= start || v <= end)
+    }
+
+    /** Rotate UI elements (e.g. settings button) in the correct direction. */
+    private fun rotateUiTo(angle: Int) {
+        val corrected = (360 - angle) % 360 // flip direction for visual correctness
+        binding.settingsButton.animate()
+            .rotation(corrected.toFloat())
+            .setDuration(250)
+            .setInterpolator(DecelerateInterpolator())
+            .start()
+    }
+
+    // --- Lifecycle ---
+    override fun onResume() {
+        super.onResume()
+        if (binding.glSurface.holder.surface.isValid && renderer == null) {
+            startRendererAndCamera()
+        }
+        orientationListener?.enable()
     }
 
     override fun onPause() {
         super.onPause()
-        camera?.close()
-        renderer?.stop()
+        orientationListener?.disable()
+        stopRendererAndCamera()
     }
 }
