@@ -1,0 +1,6 @@
+<resources>
+    <color name="actionlens_primary">#009688</color>  <!-- Teal -->
+    <color name="actionlens_secondary">#80CBC4</color> <!-- Light teal -->
+    <color name="white">#FFFFFF</color>
+    <color name="black">#000000</color>
+</resources>
