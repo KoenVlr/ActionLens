@@ -13,7 +13,6 @@ class ActionLensRenderer(
     private val surface: Surface,
     private val fps: Int = 30,
     private val delaySeconds: Int = 3,
-    // Camera buffer size; keep this in sync with your CameraController setDefaultBufferSize().
     private val frameWidth: Int = 1280,
     private val frameHeight: Int = 720
 ) {
@@ -36,6 +35,9 @@ class ActionLensRenderer(
 
     // Callback once SurfaceTexture is ready
     @Volatile var onSurfaceTextureReady: ((SurfaceTexture) -> Unit)? = null
+
+    // --- Optional progress callback (UI use) ---
+    @Volatile var onProgressUpdate: ((Float) -> Unit)? = null
 
     // --- Delayed playback ring buffer ---
     private val delayFrames = (fps * delaySeconds).coerceAtLeast(1)
@@ -73,7 +75,9 @@ class ActionLensRenderer(
     }
 
     /** Request graceful stop; actual EGL teardown happens on render thread. */
-    fun stop() { shouldExit = true }
+    fun stop() {
+        shouldExit = true
+    }
 
     // --- Core render loop ---
     private fun renderLoop() {
@@ -94,7 +98,7 @@ class ActionLensRenderer(
             while (!shouldExit) {
                 if (!surface.isValid) break
 
-                // If a new camera frame arrived, blit it into the ring buffer FBO
+                // --- Capture new frame ---
                 if (frameAvailable) {
                     frameAvailable = false
                     surfaceTex.updateTexImage()
@@ -106,26 +110,27 @@ class ActionLensRenderer(
                     GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, 0)
 
                     head = (head + 1) % delayFrames
-                    // Increase buffered count until full capacity reached
                     val cur = framesBufferedAtomic.get()
                     if (cur < delayFrames) framesBufferedAtomic.incrementAndGet()
+
+                    // ✅ Notify progress (0.0–1.0)
+                    onProgressUpdate?.invoke(getFillRatio())
                 }
 
-                // Clear window
+                // --- Clear window ---
                 val surfW = eglQuery(EGL14.EGL_WIDTH)
                 val surfH = eglQuery(EGL14.EGL_HEIGHT)
                 GLES30.glViewport(0, 0, surfW, surfH)
                 GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT)
 
-                // Draw delayed full-screen once we have enough frames
+                // --- Draw delayed full-screen once buffer full ---
                 if (framesBufferedAtomic.get() >= delayFrames) {
                     val idx = (head - delayFrames + delayFrames) % delayFrames
-                    // Fit the camera frame to window with basic letterboxing; here we just stretch to fill.
                     GLES30.glViewport(0, 0, surfW, surfH)
                     GlUtil.drawTex(progRgb, quadVao, ringTex[idx])
                 }
 
-                // Live PiP overlay
+                // --- Live PiP overlay ---
                 if (pipCorner != PipCorner.HIDDEN) {
                     val pipW = (surfW * pipScale).toInt()
                     val pipH = (surfH * pipScale).toInt()
@@ -141,11 +146,10 @@ class ActionLensRenderer(
                     GlUtil.drawOes(progOes, quadVao, oesTex, stMatrix)
                 }
 
-                // Present
+                // --- Present frame ---
                 EGL14.eglSwapBuffers(eglDisplay, eglSurface)
             }
         } finally {
-            // Cleanup on the same thread that created EGL
             destroyGLResources()
             destroyEGL()
             running = false
@@ -157,7 +161,7 @@ class ActionLensRenderer(
     /** Block briefly until Surface becomes valid to avoid early EGL failures. */
     private fun waitForValidSurface() {
         var tries = 0
-        while (!surface.isValid && tries < 100) { // up to ~1s
+        while (!surface.isValid && tries < 100) {
             try { Thread.sleep(10) } catch (_: InterruptedException) {}
             tries++
         }
@@ -167,7 +171,8 @@ class ActionLensRenderer(
     private fun initEGL() {
         eglDisplay = EGL14.eglGetDisplay(EGL14.EGL_DEFAULT_DISPLAY)
         require(eglDisplay != null && eglDisplay != EGL14.EGL_NO_DISPLAY) { "No EGL display" }
-        val vMaj = IntArray(1); val vMin = IntArray(1)
+        val vMaj = IntArray(1)
+        val vMin = IntArray(1)
         EGL14.eglInitialize(eglDisplay, vMaj, 0, vMin, 0)
 
         val cfgAttrs = intArrayOf(
@@ -184,16 +189,13 @@ class ActionLensRenderer(
         EGL14.eglChooseConfig(eglDisplay, cfgAttrs, 0, cfg, 0, 1, num, 0)
         require(num[0] > 0) { "No EGL config found" }
 
-        val ctxAttrs = intArrayOf(
-            EGL14.EGL_CONTEXT_CLIENT_VERSION, 3,
-            EGL14.EGL_NONE
-        )
+        val ctxAttrs = intArrayOf(EGL14.EGL_CONTEXT_CLIENT_VERSION, 3, EGL14.EGL_NONE)
         eglContext = EGL14.eglCreateContext(eglDisplay, cfg[0], EGL14.EGL_NO_CONTEXT, ctxAttrs, 0)
-        require(eglContext != null && eglContext != EGL14.EGL_NO_CONTEXT) { "Failed to create EGL context" }
+        require(eglContext != null && eglContext != EGL14.EGL_NO_CONTEXT)
 
         val surfAttrs = intArrayOf(EGL14.EGL_NONE)
         eglSurface = EGL14.eglCreateWindowSurface(eglDisplay, cfg[0], surface, surfAttrs, 0)
-        require(eglSurface != null && eglSurface != EGL14.EGL_NO_SURFACE) { "Failed to create EGL window surface" }
+        require(eglSurface != null && eglSurface != EGL14.EGL_NO_SURFACE)
 
         EGL14.eglMakeCurrent(eglDisplay, eglSurface, eglSurface, eglContext)
     }
@@ -212,7 +214,6 @@ class ActionLensRenderer(
         GLES30.glGenFramebuffers(delayFrames, ringFbo, 0)
         for (i in 0 until delayFrames) {
             GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, ringTex[i])
-            // Proper parameters for non-mipmapped render targets
             GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_MIN_FILTER, GLES30.GL_LINEAR)
             GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_MAG_FILTER, GLES30.GL_LINEAR)
             GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_WRAP_S, GLES30.GL_CLAMP_TO_EDGE)
@@ -277,7 +278,7 @@ class ActionLensRenderer(
         return out[0]
     }
 
-    // --- Shaders (no leading whitespace before #version) ---
+    // --- Shaders ---
     companion object {
         private const val VS = "#version 300 es\n" +
                 "layout(location=0) in vec2 aPos;\n" +

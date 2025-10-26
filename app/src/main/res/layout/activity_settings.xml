@@ -39,11 +39,30 @@
         android:layout_height="wrap_content"
         android:max="10" />
 
+    <Switch
+        android:id="@+id/switchShowLive"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Show Live Preview"
+        android:checked="true"
+        android:layout_marginTop="16dp" />
+
+    <Button
+        android:id="@+id/btnLivePosition"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Live Position: Top Right"
+        android:enabled="true"
+        android:layout_marginTop="8dp" />
+
+
     <Button
         android:id="@+id/btnSave"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text="Save"
         android:layout_marginTop="24dp" />
+
+
 
 </LinearLayout>

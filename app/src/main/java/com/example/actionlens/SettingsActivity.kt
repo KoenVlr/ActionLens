@@ -1,5 +1,6 @@
 package com.example.actionlens
 
+import android.app.AlertDialog
 import android.os.Bundle
 import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
@@ -10,12 +11,16 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var fpsSpinner: Spinner
     private lateinit var delaySeekBar: SeekBar
     private lateinit var delayLabel: TextView
+    private lateinit var showLiveSwitch: Switch
+    private lateinit var livePositionButton: Button
     private lateinit var saveButton: Button
 
     private var width = 1280
     private var height = 720
     private var fps = 30
     private var delaySeconds = 3
+    private var showLive = true
+    private var liveCorner = SettingsStore.LiveOverlayCorner.TOP_RIGHT
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -25,15 +30,18 @@ class SettingsActivity : AppCompatActivity() {
         fpsSpinner = findViewById(R.id.spinnerFps)
         delaySeekBar = findViewById(R.id.seekDelay)
         delayLabel = findViewById(R.id.textDelay)
+        showLiveSwitch = findViewById(R.id.switchShowLive)
+        livePositionButton = findViewById(R.id.btnLivePosition)
         saveButton = findViewById(R.id.btnSave)
 
-        val prefs = getSharedPreferences("actionlens_prefs", MODE_PRIVATE)
-
-        // Load current settings
-        width = prefs.getInt("width", 1280)
-        height = prefs.getInt("height", 720)
-        fps = prefs.getInt("fps", 30)
-        delaySeconds = prefs.getInt("delay", 3)
+        // --- Load saved settings ---
+        val s = SettingsStore.load(this)
+        width = s.width
+        height = s.height
+        fps = s.fps
+        delaySeconds = s.delaySecondsSelected
+        showLive = s.showLiveOverlay
+        liveCorner = s.liveOverlayCorner
 
         // --- Resolution Spinner ---
         val resolutions = listOf("1280x720", "1920x1080", "640x480")
@@ -53,10 +61,34 @@ class SettingsActivity : AppCompatActivity() {
         delaySeekBar.progress = delaySeconds
         delayLabel.text = "Delay: ${delaySeconds}s"
 
-        // --- Initialize max slider value ---
+        // --- Initialize delay max based on memory ---
         updateDelayMax()
 
-        // --- Listeners ---
+        // --- Restore live overlay settings ---
+        showLiveSwitch.isChecked = showLive
+        livePositionButton.isEnabled = showLive
+
+        livePositionButton.text = "Live Position: ${cornerLabel(liveCorner)}"
+
+        showLiveSwitch.setOnCheckedChangeListener { _, isChecked ->
+            showLive = isChecked
+            livePositionButton.isEnabled = isChecked
+        }
+
+        livePositionButton.setOnClickListener {
+            val options = arrayOf("Top Left", "Top Right", "Bottom Left", "Bottom Right")
+            val current = liveCorner.ordinal
+            AlertDialog.Builder(this)
+                .setTitle("Select Live Preview Position")
+                .setSingleChoiceItems(options, current) { dialog, which ->
+                    liveCorner = SettingsStore.LiveOverlayCorner.values()[which]
+                    livePositionButton.text = "Live Position: ${options[which]}"
+                    dialog.dismiss()
+                }
+                .show()
+        }
+
+        // --- Listeners for camera and delay settings ---
         resolutionSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: AdapterView<*>?, v: android.view.View?, pos: Int, id: Long) {
                 val (w, h) = parseResolution(resolutions[pos])
@@ -84,14 +116,18 @@ class SettingsActivity : AppCompatActivity() {
             override fun onStopTrackingTouch(sb: SeekBar?) {}
         })
 
+        // --- Save all settings ---
         saveButton.setOnClickListener {
-            prefs.edit().apply {
-                putInt("width", width)
-                putInt("height", height)
-                putInt("fps", fps)
-                putInt("delay", delaySeconds)
-                apply()
-            }
+            val sNew = SettingsStore.Settings(
+                width = width,
+                height = height,
+                fps = fps,
+                delaySecondsSelected = delaySeconds,
+                mirrorPreview = false, // (keep your default)
+                showLiveOverlay = showLive,
+                liveOverlayCorner = liveCorner
+            )
+            SettingsStore.save(this, sNew)
             Toast.makeText(this, "Settings saved", Toast.LENGTH_SHORT).show()
             finish()
         }
@@ -113,5 +149,12 @@ class SettingsActivity : AppCompatActivity() {
     private fun parseResolution(res: String): Pair<Int, Int> {
         val parts = res.split("x")
         return parts[0].toInt() to parts[1].toInt()
+    }
+
+    private fun cornerLabel(corner: SettingsStore.LiveOverlayCorner): String = when (corner) {
+        SettingsStore.LiveOverlayCorner.TOP_LEFT -> "Top Left"
+        SettingsStore.LiveOverlayCorner.TOP_RIGHT -> "Top Right"
+        SettingsStore.LiveOverlayCorner.BOTTOM_LEFT -> "Bottom Left"
+        SettingsStore.LiveOverlayCorner.BOTTOM_RIGHT -> "Bottom Right"
     }
 }

@@ -36,11 +36,11 @@ class MainActivity : AppCompatActivity() {
     private val memoryHandler = Handler(Looper.getMainLooper())
     private var memoryLoggerRunning = false
 
-    // --- Delay progress bar ---
+    // --- UI update handler ---
     private val uiHandler = Handler(Looper.getMainLooper())
     private var isPlaybackStarted = false
 
-    // Keep last-used settings to detect changes
+    // Keep last-used settings
     private var lastWidth = 1280
     private var lastHeight = 720
     private var lastFps = 30
@@ -51,10 +51,11 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
+
         binding.delayProgressBar.pivotX = 0f
         binding.delayProgressBar.pivotY = 0f
 
-        // ✅ Cache baseline available RAM once per app session (before renderer allocs)
+        // ✅ Cache baseline available RAM once per app session
         val sessionPrefs = getSharedPreferences("actionlens_session", MODE_PRIVATE)
         if (!sessionPrefs.contains("baseline_avail_mb")) {
             val am = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
@@ -65,11 +66,12 @@ class MainActivity : AppCompatActivity() {
             Log.d("RAM", "Session baseline cached: $baselineAvailMb MB")
         }
 
-        // --- UI setup ---
+        // --- Settings button ---
         binding.settingsButton.setOnClickListener {
             startActivity(Intent(this, SettingsActivity::class.java))
         }
 
+        // --- Surface callbacks ---
         binding.glSurface.holder.addCallback(object : SurfaceHolder.Callback {
             override fun surfaceCreated(holder: SurfaceHolder) {
                 applySettingsIfChanged()
@@ -82,6 +84,7 @@ class MainActivity : AppCompatActivity() {
             override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {}
         })
 
+        // --- Orientation listener ---
         orientationListener = object : OrientationEventListener(this) {
             override fun onOrientationChanged(orientation: Int) {
                 if (orientation == ORIENTATION_UNKNOWN) return
@@ -93,8 +96,44 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // 🔹 Start updating the progress bar
+        // 🔹 Start updating progress bar continuously
         uiHandler.post(delayUiRunnable)
+    }
+
+    // --- Smooth delay bar update loop ---
+    private var displayedRatio = 0f
+    private val updateIntervalMs = 16L // ~60fps
+
+    private val delayUiRunnable = object : Runnable {
+        override fun run() {
+            val targetRatio = renderer?.getFillRatio() ?: 0f
+            displayedRatio += (targetRatio - displayedRatio) * 0.15f
+
+            if (!isPlaybackStarted) {
+                if (binding.delayProgressBar.visibility != View.VISIBLE) {
+                    binding.delayProgressBar.visibility = View.VISIBLE
+                    binding.delayProgressBar.alpha = 1f
+                }
+
+                binding.delayProgressBar.progress = (displayedRatio * 1000).toInt()
+
+                if (targetRatio >= 1f && displayedRatio > 0.99f) {
+                    isPlaybackStarted = true
+                    binding.delayProgressBar.animate()
+                        .alpha(0f)
+                        .setDuration(500)
+                        .withEndAction {
+                            binding.delayProgressBar.visibility = View.GONE
+                            binding.delayProgressBar.alpha = 1f
+                            binding.delayProgressBar.progress = 0
+                            displayedRatio = 0f
+                        }
+                        .start()
+                }
+            }
+
+            uiHandler.postDelayed(this, updateIntervalMs)
+        }
     }
 
     // --- Memory logger every 3 seconds ---
@@ -128,7 +167,6 @@ class MainActivity : AppCompatActivity() {
 
         val availMb = mi.availMem / (1024 * 1024)
         val totalMb = mi.totalMem / (1024 * 1024)
-        val lowMemory = mi.lowMemory
         val heapUsed =
             (Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory()) / (1024 * 1024)
         val heapMax = Runtime.getRuntime().maxMemory() / (1024 * 1024)
@@ -137,95 +175,61 @@ class MainActivity : AppCompatActivity() {
             append("=== Memory Report ===\n")
             append("System total: $totalMb MB | Available: $availMb MB\n")
             append("Heap used: $heapUsed MB / $heapMax MB\n")
-            append("Low memory flag: $lowMemory\n")
+            append("Low memory flag: ${mi.lowMemory}\n")
             append("Renderer active: ${renderer != null}\n")
             append("=====================")
         })
     }
 
-    // --- Delay bar update loop (smooth) ---
-    private var lastRatio = 0f
-    private var displayedRatio = 0f
-    private val updateIntervalMs = 16L  // ~60fps for smoothness
-
-    private val delayUiRunnable = object : Runnable {
-        override fun run() {
-            val targetRatio = renderer?.getFillRatio() ?: 0f
-
-            // Smoothly interpolate between previous and target
-            displayedRatio += (targetRatio - displayedRatio) * 0.15f
-
-            if (!isPlaybackStarted) {
-                if (binding.delayProgressBar.visibility != View.VISIBLE) {
-                    binding.delayProgressBar.visibility = View.VISIBLE
-                    binding.delayProgressBar.alpha = 1f
-                }
-
-                binding.delayProgressBar.progress = (displayedRatio * 1000).toInt()
-
-                if (targetRatio >= 1f && displayedRatio > 0.99f) {
-                    isPlaybackStarted = true
-                    binding.delayProgressBar.animate()
-                        .alpha(0f)
-                        .setDuration(500)
-                        .withEndAction {
-                            binding.delayProgressBar.visibility = View.GONE
-                            binding.delayProgressBar.alpha = 1f
-                            binding.delayProgressBar.progress = 0
-                            displayedRatio = 0f
-                            lastRatio = 0f
-                        }
-                        .start()
-                }
-            }
-
-            lastRatio = targetRatio
-            uiHandler.postDelayed(this, updateIntervalMs)
-        }
-    }
-
-
-    // --- Apply settings from SharedPreferences ---
+    // --- Apply settings ---
     private fun applySettingsIfChanged() {
         if (!allPermissionsGranted()) {
             requestPermissions(requiredPermissions, 10)
             return
         }
 
-        val prefs = getSharedPreferences("actionlens_prefs", MODE_PRIVATE)
-        val width = prefs.getInt("width", 1280)
-        val height = prefs.getInt("height", 720)
-        val fps = prefs.getInt("fps", 30)
-        val delay = prefs.getInt("delay", 3)
-
+        val s = SettingsStore.load(this)
         val needRestart = renderer == null ||
-                width != lastWidth || height != lastHeight ||
-                fps != lastFps || delay != lastDelaySec
+                s.width != lastWidth || s.height != lastHeight ||
+                s.fps != lastFps || s.delaySecondsSelected != lastDelaySec
 
         if (needRestart) {
-            lastWidth = width
-            lastHeight = height
-            lastFps = fps
-            lastDelaySec = delay
+            lastWidth = s.width
+            lastHeight = s.height
+            lastFps = s.fps
+            lastDelaySec = s.delaySecondsSelected
 
             stopRendererAndCamera()
-            startRendererAndCamera(width, height, fps, delay)
+            startRendererAndCamera(s)
 
             isPlaybackStarted = false
             binding.delayProgressBar.visibility = View.VISIBLE
             binding.delayProgressBar.progress = 0
             binding.delayProgressBar.alpha = 1f
 
-            Toast.makeText(this, "Settings applied: ${width}x$height @${fps}fps, ${delay}s delay", Toast.LENGTH_SHORT).show()
+            Toast.makeText(
+                this,
+                "Settings applied: ${s.width}x${s.height} @${s.fps}fps, ${s.delaySecondsSelected}s delay",
+                Toast.LENGTH_SHORT
+            ).show()
         }
     }
 
-    private fun startRendererAndCamera(width: Int, height: Int, fps: Int, delay: Int) {
+    private fun startRendererAndCamera(s: SettingsStore.Settings) {
         val surface = binding.glSurface.holder.surface
-        renderer = ActionLensRenderer(surface, fps, delay, width, height).apply {
-            onSurfaceTextureReady = { texture ->
-                startCamera(texture, width, height)
+        renderer = ActionLensRenderer(surface, s.fps, s.delaySecondsSelected, s.width, s.height).apply {
+            pipCorner = if (!s.showLiveOverlay) {
+                ActionLensRenderer.PipCorner.HIDDEN
+            } else {
+                when (s.liveOverlayCorner) {
+                    SettingsStore.LiveOverlayCorner.TOP_LEFT -> ActionLensRenderer.PipCorner.TOP_LEFT
+                    SettingsStore.LiveOverlayCorner.TOP_RIGHT -> ActionLensRenderer.PipCorner.TOP_RIGHT
+                    SettingsStore.LiveOverlayCorner.BOTTOM_LEFT -> ActionLensRenderer.PipCorner.BOTTOM_LEFT
+                    SettingsStore.LiveOverlayCorner.BOTTOM_RIGHT -> ActionLensRenderer.PipCorner.BOTTOM_RIGHT
+                }
             }
+
+            onSurfaceTextureReady = { texture -> startCamera(texture, s.width, s.height) }
             start()
         }
     }
@@ -262,22 +266,21 @@ class MainActivity : AppCompatActivity() {
         return if (start <= end) (v in start..end) else (v >= start || v <= end)
     }
 
+    // --- Rotate settings button + progress bar ---
     private fun rotateUiTo(angle: Int) {
         val corrected = (360 - angle) % 360
 
-        // Animate settings button (as before)
+        // Animate button rotation
         binding.settingsButton.animate()
             .rotation(corrected.toFloat())
             .setDuration(250)
             .setInterpolator(DecelerateInterpolator())
             .start()
 
-        // --- Handle progress bar position ---
+        // Progress bar positioning
         val bar = binding.delayProgressBar
         bar.pivotX = 0f
         bar.pivotY = 0f
-
-        // Reset any previous translations
         bar.translationX = 0f
         bar.translationY = 0f
 
@@ -287,30 +290,12 @@ class MainActivity : AppCompatActivity() {
         val rootH = binding.root.height.toFloat()
 
         when (corrected) {
-            0 -> { // portrait top
-                bar.rotation = 0f
-                bar.translationX = 0f
-                bar.translationY = 0f
-            }
-            90 -> { // landscape right edge
-                bar.rotation = 90f
-                bar.translationX = rootW - h
-                bar.translationY = 0f
-            }
-            180 -> { // upside down
-                bar.rotation = 180f
-                bar.translationX = rootW - w
-                bar.translationY = rootH - h
-            }
-            270 -> { // landscape left edge
-                bar.rotation = 270f
-                bar.translationX = 0f
-                bar.translationY = rootH - w
-            }
+            0 -> { bar.rotation = 0f }
+            90 -> { bar.rotation = 90f; bar.translationX = rootW - h }
+            180 -> { bar.rotation = 180f; bar.translationX = rootW - w; bar.translationY = rootH - h }
+            270 -> { bar.rotation = 270f; bar.translationY = rootH - w }
         }
     }
-
-
 
     override fun onResume() {
         super.onResume()
