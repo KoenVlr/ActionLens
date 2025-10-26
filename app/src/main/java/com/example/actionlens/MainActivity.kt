@@ -17,7 +17,6 @@ import android.view.View
 import android.view.animation.DecelerateInterpolator
 import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.app.ActivityCompat.requestPermissions
 import androidx.core.content.ContextCompat
 import com.example.actionlens.databinding.ActivityMainBinding
 
@@ -26,26 +25,17 @@ class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     private var renderer: ActionLensRenderer? = null
     private var cameraController: CameraController? = null
-
     private val requiredPermissions = arrayOf(Manifest.permission.CAMERA)
-
     private var orientationListener: OrientationEventListener? = null
     private var currentUiRotation = -1
-
-    // --- Memory logging ---
-    private val memoryHandler = Handler(Looper.getMainLooper())
-    private var memoryLoggerRunning = false
-
     // --- UI update handler ---
     private val uiHandler = Handler(Looper.getMainLooper())
     private var isPlaybackStarted = false
-
     // Keep last-used settings
     private var lastWidth = 1280
     private var lastHeight = 720
     private var lastFps = 30
     private var lastDelaySec = 3
-
     // Overlay state
     private var overlayVisible = false
 
@@ -150,7 +140,9 @@ class MainActivity : AppCompatActivity() {
         val s = SettingsStore.load(this)
         val needRestart = renderer == null ||
                 s.width != lastWidth || s.height != lastHeight ||
-                s.fps != lastFps || s.delaySecondsSelected != lastDelaySec
+                s.fps != lastFps || s.delaySecondsSelected != lastDelaySec ||
+                s.showLiveOverlay != renderer?.pipCornerVisible() ||     // 🔹 new line
+                s.liveOverlayCorner.ordinal != renderer?.pipCornerOrdinal() // 🔹 new line
 
         if (needRestart) {
             lastWidth = s.width
@@ -173,6 +165,7 @@ class MainActivity : AppCompatActivity() {
             ).show()
         }
     }
+
 
     private fun startRendererAndCamera(s: SettingsStore.Settings) {
         val surface = binding.glSurface.holder.surface
@@ -202,9 +195,14 @@ class MainActivity : AppCompatActivity() {
     private fun stopRendererAndCamera() {
         cameraController?.close()
         cameraController = null
-        renderer?.stop()
+
+        renderer?.let {
+            Log.d("MainActivity", "Stopping renderer safely...")
+            it.stopBlocking()  // ensures EGL is destroyed after loop exits
+        }
         renderer = null
     }
+
 
     private fun allPermissionsGranted(): Boolean {
         return requiredPermissions.all {
@@ -480,11 +478,11 @@ class MainActivity : AppCompatActivity() {
                 liveOverlayCorner = ovLiveCorner
             )
             SettingsStore.save(this, sNew)
-            Toast.makeText(this, "Settings saved", Toast.LENGTH_SHORT).show()
             hideSettingsOverlay()
             // Apply immediately
             applySettingsIfChanged()
         }
+
 
         overlayCloseButton.setOnClickListener {
             hideSettingsOverlay()

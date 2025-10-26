@@ -18,6 +18,8 @@ class ActionLensRenderer(
     private val frameWidth: Int = 1280,
     private val frameHeight: Int = 720
 ) {
+    fun pipCornerVisible(): Boolean = pipCorner != PipCorner.HIDDEN
+    fun pipCornerOrdinal(): Int = pipCorner.ordinal
 
     private val TAG = "ActionLensRenderer"
 
@@ -64,19 +66,37 @@ class ActionLensRenderer(
         return if (max <= 0) 0f else cur.toFloat() / max.toFloat()
     }
 
-    fun isPlaybackStarted(): Boolean = framesBufferedAtomic.get() >= delayFrames
+    private var renderThread: Thread? = null
 
     fun start() {
         Log.d(TAG, "Starting renderer thread (fps=$fps, delay=${delaySeconds}s, size=${frameWidth}x$frameHeight)")
         shouldExit = false
         running = true
-        thread(start = true, name = "ActionLensRenderer") { renderLoop() }
+        renderThread = thread(start = true, name = "ActionLensRenderer") {
+            renderLoop()
+        }
+    }
+
+    fun stopBlocking() {
+        Log.d(TAG, "stopBlocking() called")
+        shouldExit = true
+        val t = renderThread
+        if (t != null && t.isAlive) {
+            try {
+                t.join(1500) // Wait for render thread to exit gracefully
+                Log.d(TAG, "Renderer thread joined successfully")
+            } catch (e: InterruptedException) {
+                Log.w(TAG, "Interrupted while waiting for render thread to finish")
+            }
+        }
+        renderThread = null
     }
 
     fun stop() {
-        Log.d(TAG, "Stop requested")
-        shouldExit = true
+        // legacy non-blocking version for compatibility
+        stopBlocking()
     }
+
 
     // --- Core render loop ---
     private fun renderLoop() {
