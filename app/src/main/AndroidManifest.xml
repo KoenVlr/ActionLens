@@ -20,11 +20,6 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.ActionLens"
         tools:targetApi="31">
-        <activity
-            android:name=".SettingsActivity"
-            android:exported="false"
-            android:label="@string/title_activity_settings"
-            android:theme="@style/Theme.AppCompat.Light"/>
 
         <activity
             android:name=".MainActivity"

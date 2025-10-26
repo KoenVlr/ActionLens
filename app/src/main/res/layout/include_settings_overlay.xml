@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/settingsScroll"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:overScrollMode="ifContentScrolls">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Resolution" />
+
+        <Spinner
+            android:id="@+id/overlaySpinnerResolution"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="FPS"
+            android:layout_marginTop="16dp" />
+
+        <Spinner
+            android:id="@+id/overlaySpinnerFps"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content" />
+
+        <TextView
+            android:id="@+id/overlayTextDelay"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Delay: 0s"
+            android:layout_marginTop="16dp" />
+
+        <SeekBar
+            android:id="@+id/overlaySeekDelay"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:max="10" />
+
+        <Switch
+            android:id="@+id/overlaySwitchShowLive"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Show Live Preview"
+            android:checked="true"
+            android:layout_marginTop="16dp" />
+
+        <Button
+            android:id="@+id/overlayBtnLivePosition"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Live Position: Top Right"
+            android:enabled="true"
+            android:layout_marginTop="8dp" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginTop="16dp">
+
+            <Button
+                android:id="@+id/overlayBtnClose"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Close" />
+
+            <Space
+                android:layout_width="8dp"
+                android:layout_height="wrap_content" />
+
+            <Button
+                android:id="@+id/overlayBtnSave"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Save" />
+        </LinearLayout>
+
+    </LinearLayout>
+</ScrollView>
