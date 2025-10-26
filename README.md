@@ -1,10 +1,10 @@
 # 🧭 Settings / Controls
 
-1. **Separate Settings Activity**
+1. **Separate Settings Activity** --> DONE
 
    * Basic options screen; persists prefs (delay, resolution, etc.).
 
-2. **Adaptive Delay Slider**
+2. **Adaptive Delay Slider** --> DONE
 
    * Recalculate **max delay** from resolution/FPS/memory; clamp value and update slider on resolution change.
 
