@@ -3,6 +3,7 @@ package com.example.actionlens
 import android.graphics.SurfaceTexture
 import android.opengl.*
 import android.view.Surface
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.concurrent.thread
 
 // EGL flag for ES 3.0 context
@@ -41,7 +42,9 @@ class ActionLensRenderer(
     private val ringTex = IntArray(delayFrames)
     private val ringFbo = IntArray(delayFrames)
     private var head = 0
-    private var framesBuffered = 0
+
+    // Use atomic for safe reads from UI thread
+    private val framesBufferedAtomic = AtomicInteger(0)
 
     // --- Live PiP config ---
     enum class PipCorner { TOP_LEFT, TOP_RIGHT, BOTTOM_LEFT, BOTTOM_RIGHT, HIDDEN }
@@ -49,7 +52,19 @@ class ActionLensRenderer(
     @Volatile var pipScale: Float = 0.25f
 
     // --- Public API ---
+
+    /** Returns the SurfaceTexture that Camera2 should write into (OES). */
     fun getInputSurfaceTexture(): SurfaceTexture = surfaceTex
+
+    /** 0.0 while buffer is empty, 1.0 once the delay buffer is full (playback-ready). */
+    fun getFillRatio(): Float {
+        val max = delayFrames
+        val cur = framesBufferedAtomic.get().coerceAtMost(max)
+        return if (max <= 0) 0f else cur.toFloat() / max.toFloat()
+    }
+
+    /** Convenience: true when delayed playback has enough frames to start. */
+    fun isPlaybackStarted(): Boolean = framesBufferedAtomic.get() >= delayFrames
 
     fun start() {
         shouldExit = false
@@ -91,7 +106,9 @@ class ActionLensRenderer(
                     GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, 0)
 
                     head = (head + 1) % delayFrames
-                    if (framesBuffered < delayFrames) framesBuffered++
+                    // Increase buffered count until full capacity reached
+                    val cur = framesBufferedAtomic.get()
+                    if (cur < delayFrames) framesBufferedAtomic.incrementAndGet()
                 }
 
                 // Clear window
@@ -101,7 +118,7 @@ class ActionLensRenderer(
                 GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT)
 
                 // Draw delayed full-screen once we have enough frames
-                if (framesBuffered >= delayFrames) {
+                if (framesBufferedAtomic.get() >= delayFrames) {
                     val idx = (head - delayFrames + delayFrames) % delayFrames
                     // Fit the camera frame to window with basic letterboxing; here we just stretch to fill.
                     GLES30.glViewport(0, 0, surfW, surfH)
@@ -141,7 +158,7 @@ class ActionLensRenderer(
     private fun waitForValidSurface() {
         var tries = 0
         while (!surface.isValid && tries < 100) { // up to ~1s
-            Thread.sleep(10)
+            try { Thread.sleep(10) } catch (_: InterruptedException) {}
             tries++
         }
         if (!surface.isValid) throw IllegalStateException("Surface is not valid after waiting.")
@@ -216,17 +233,21 @@ class ActionLensRenderer(
             }
         }
         GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, 0)
-        framesBuffered = 0
+
+        // Reset counters
+        framesBufferedAtomic.set(0)
         head = 0
     }
 
     private fun destroyGLResources() {
         try {
-            GLES30.glDeleteTextures(1, intArrayOf(oesTex), 0)
+            if (oesTex != 0) GLES30.glDeleteTextures(1, intArrayOf(oesTex), 0)
         } catch (_: Exception) {}
         try {
-            GLES30.glDeleteTextures(delayFrames, ringTex, 0)
-            GLES30.glDeleteFramebuffers(delayFrames, ringFbo, 0)
+            if (delayFrames > 0) {
+                GLES30.glDeleteTextures(delayFrames, ringTex, 0)
+                GLES30.glDeleteFramebuffers(delayFrames, ringFbo, 0)
+            }
         } catch (_: Exception) {}
     }
 

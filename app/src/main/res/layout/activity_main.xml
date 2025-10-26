@@ -1,8 +1,10 @@
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@android:color/black">
+
 
     <!-- OpenGL Surface for delayed & live rendering -->
     <SurfaceView
@@ -11,15 +13,29 @@
         android:layout_height="match_parent"
         android:keepScreenOn="true" />
 
-    <!-- Simple settings / PiP toggle button -->
-    <Button
+    <ProgressBar
+        android:id="@+id/delayProgressBar"
+        style="?android:attr/progressBarStyleHorizontal"
+        android:layout_width="match_parent"
+        android:layout_height="3dp"
+        android:layout_gravity="top"
+        android:max="1000"
+        android:progress="0"
+        android:indeterminate="false"
+        android:progressTint="@android:color/white"
+        android:backgroundTint="@android:color/transparent"
+        android:visibility="gone" />
+
+    <!-- Settings Icon -->
+    <ImageButton
         android:id="@+id/settingsButton"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
         android:layout_gravity="bottom|end"
-        android:layout_margin="24dp"
-        android:backgroundTint="@color/actionlens_primary"
-        android:textColor="@android:color/white"
-        android:text="Settings" />
+        android:layout_margin="16dp"
+        android:background="?attr/selectableItemBackgroundBorderless"
+        android:padding="8dp"
+        android:src="@drawable/ic_settings_gear"
+        app:tint="@android:color/white" />
 
 </FrameLayout>

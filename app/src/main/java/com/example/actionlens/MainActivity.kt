@@ -13,6 +13,7 @@ import android.os.Looper
 import android.util.Log
 import android.view.OrientationEventListener
 import android.view.SurfaceHolder
+import android.view.View
 import android.view.animation.DecelerateInterpolator
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
@@ -35,6 +36,10 @@ class MainActivity : AppCompatActivity() {
     private val memoryHandler = Handler(Looper.getMainLooper())
     private var memoryLoggerRunning = false
 
+    // --- Delay progress bar ---
+    private val uiHandler = Handler(Looper.getMainLooper())
+    private var isPlaybackStarted = false
+
     // Keep last-used settings to detect changes
     private var lastWidth = 1280
     private var lastHeight = 720
@@ -44,9 +49,10 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LOCKED
         super.onCreate(savedInstanceState)
-
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        binding.delayProgressBar.pivotX = 0f
+        binding.delayProgressBar.pivotY = 0f
 
         // ✅ Cache baseline available RAM once per app session (before renderer allocs)
         val sessionPrefs = getSharedPreferences("actionlens_session", MODE_PRIVATE)
@@ -86,6 +92,9 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
+
+        // 🔹 Start updating the progress bar
+        uiHandler.post(delayUiRunnable)
     }
 
     // --- Memory logger every 3 seconds ---
@@ -131,9 +140,50 @@ class MainActivity : AppCompatActivity() {
             append("Low memory flag: $lowMemory\n")
             append("Renderer active: ${renderer != null}\n")
             append("=====================")
-
         })
     }
+
+    // --- Delay bar update loop (smooth) ---
+    private var lastRatio = 0f
+    private var displayedRatio = 0f
+    private val updateIntervalMs = 16L  // ~60fps for smoothness
+
+    private val delayUiRunnable = object : Runnable {
+        override fun run() {
+            val targetRatio = renderer?.getFillRatio() ?: 0f
+
+            // Smoothly interpolate between previous and target
+            displayedRatio += (targetRatio - displayedRatio) * 0.15f
+
+            if (!isPlaybackStarted) {
+                if (binding.delayProgressBar.visibility != View.VISIBLE) {
+                    binding.delayProgressBar.visibility = View.VISIBLE
+                    binding.delayProgressBar.alpha = 1f
+                }
+
+                binding.delayProgressBar.progress = (displayedRatio * 1000).toInt()
+
+                if (targetRatio >= 1f && displayedRatio > 0.99f) {
+                    isPlaybackStarted = true
+                    binding.delayProgressBar.animate()
+                        .alpha(0f)
+                        .setDuration(500)
+                        .withEndAction {
+                            binding.delayProgressBar.visibility = View.GONE
+                            binding.delayProgressBar.alpha = 1f
+                            binding.delayProgressBar.progress = 0
+                            displayedRatio = 0f
+                            lastRatio = 0f
+                        }
+                        .start()
+                }
+            }
+
+            lastRatio = targetRatio
+            uiHandler.postDelayed(this, updateIntervalMs)
+        }
+    }
+
 
     // --- Apply settings from SharedPreferences ---
     private fun applySettingsIfChanged() {
@@ -160,6 +210,11 @@ class MainActivity : AppCompatActivity() {
 
             stopRendererAndCamera()
             startRendererAndCamera(width, height, fps, delay)
+
+            isPlaybackStarted = false
+            binding.delayProgressBar.visibility = View.VISIBLE
+            binding.delayProgressBar.progress = 0
+            binding.delayProgressBar.alpha = 1f
 
             Toast.makeText(this, "Settings applied: ${width}x$height @${fps}fps, ${delay}s delay", Toast.LENGTH_SHORT).show()
         }
@@ -209,12 +264,53 @@ class MainActivity : AppCompatActivity() {
 
     private fun rotateUiTo(angle: Int) {
         val corrected = (360 - angle) % 360
+
+        // Animate settings button (as before)
         binding.settingsButton.animate()
             .rotation(corrected.toFloat())
             .setDuration(250)
             .setInterpolator(DecelerateInterpolator())
             .start()
+
+        // --- Handle progress bar position ---
+        val bar = binding.delayProgressBar
+        bar.pivotX = 0f
+        bar.pivotY = 0f
+
+        // Reset any previous translations
+        bar.translationX = 0f
+        bar.translationY = 0f
+
+        val w = bar.width.toFloat()
+        val h = bar.height.toFloat()
+        val rootW = binding.root.width.toFloat()
+        val rootH = binding.root.height.toFloat()
+
+        when (corrected) {
+            0 -> { // portrait top
+                bar.rotation = 0f
+                bar.translationX = 0f
+                bar.translationY = 0f
+            }
+            90 -> { // landscape right edge
+                bar.rotation = 90f
+                bar.translationX = rootW - h
+                bar.translationY = 0f
+            }
+            180 -> { // upside down
+                bar.rotation = 180f
+                bar.translationX = rootW - w
+                bar.translationY = rootH - h
+            }
+            270 -> { // landscape left edge
+                bar.rotation = 270f
+                bar.translationX = 0f
+                bar.translationY = rootH - w
+            }
+        }
     }
+
+
 
     override fun onResume() {
         super.onResume()
@@ -222,13 +318,13 @@ class MainActivity : AppCompatActivity() {
             applySettingsIfChanged()
         }
         orientationListener?.enable()
-        startMemoryLogger()   // ✅ start logging
+        startMemoryLogger()
     }
 
     override fun onPause() {
         super.onPause()
         orientationListener?.disable()
         stopRendererAndCamera()
-        stopMemoryLogger()    // ✅ stop logging
+        stopMemoryLogger()
     }
 }
