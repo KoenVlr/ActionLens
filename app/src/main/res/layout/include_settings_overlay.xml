@@ -3,87 +3,185 @@
     android:id="@+id/settingsScroll"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:overScrollMode="ifContentScrolls">
+    android:background="#80222222"
+    android:padding="20dp"
+    android:overScrollMode="ifContentScrolls"
+    android:clipToPadding="false"
+    android:fadeScrollbars="false">
 
-    <LinearLayout
-        android:layout_width="match_parent"
+    <!-- Make inner container transparent -->
+<LinearLayout
+android:layout_width="match_parent"
+android:layout_height="wrap_content"
+android:orientation="vertical"
+android:dividerPadding="0dp"
+android:background="@android:color/transparent"
+android:showDividers="none">
+
+<!-- Resolution -->
+<TextView
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:text="Resolution"
+    android:textColor="@android:color/white"
+    android:textStyle="bold"
+    android:textSize="16sp"
+    android:layout_marginBottom="8dp" />
+
+<RadioGroup
+    android:id="@+id/groupResolution"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:background="@android:color/transparent">
+
+    <RadioButton
+        android:id="@+id/btnRes1080"
+        android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:orientation="vertical">
+        android:layout_weight="1"
+        android:text="1080p"
+        android:buttonTint="@android:color/white"
+        android:textColor="@android:color/white"
+        android:background="@android:color/transparent" />
 
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Resolution" />
+    <RadioButton
+        android:id="@+id/btnRes720"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:text="720p"
+        android:buttonTint="@android:color/white"
+        android:textColor="@android:color/white"
+        android:background="@android:color/transparent" />
 
-        <Spinner
-            android:id="@+id/overlaySpinnerResolution"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content" />
+    <RadioButton
+        android:id="@+id/btnRes480"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:text="480p"
+        android:buttonTint="@android:color/white"
+        android:textColor="@android:color/white"
+        android:background="@android:color/transparent" />
+</RadioGroup>
 
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="FPS"
-            android:layout_marginTop="16dp" />
+<!-- FPS -->
+<TextView
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:text="Frame Rate (FPS)"
+    android:textColor="@android:color/white"
+    android:textStyle="bold"
+    android:textSize="16sp"
+    android:layout_marginTop="16dp"
+    android:layout_marginBottom="8dp" />
 
-        <Spinner
-            android:id="@+id/overlaySpinnerFps"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content" />
+<RadioGroup
+    android:id="@+id/groupFps"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:background="@android:color/transparent">
 
-        <TextView
-            android:id="@+id/overlayTextDelay"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Delay: 0s"
-            android:layout_marginTop="16dp" />
+    <RadioButton
+        android:id="@+id/btnFps24"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:text="24"
+        android:buttonTint="@android:color/white"
+        android:textColor="@android:color/white"
+        android:background="@android:color/transparent" />
 
-        <SeekBar
-            android:id="@+id/overlaySeekDelay"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:max="10" />
+    <RadioButton
+        android:id="@+id/btnFps30"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:text="30"
+        android:buttonTint="@android:color/white"
+        android:textColor="@android:color/white"
+        android:background="@android:color/transparent" />
 
-        <Switch
-            android:id="@+id/overlaySwitchShowLive"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Show Live Preview"
-            android:checked="true"
-            android:layout_marginTop="16dp" />
+    <RadioButton
+        android:id="@+id/btnFps60"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:text="60"
+        android:buttonTint="@android:color/white"
+        android:textColor="@android:color/white"
+        android:background="@android:color/transparent" />
+</RadioGroup>
 
-        <Button
-            android:id="@+id/overlayBtnLivePosition"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Live Position: Top Right"
-            android:enabled="true"
-            android:layout_marginTop="8dp" />
+<!-- Delay -->
+<TextView
+    android:id="@+id/overlayTextDelay"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:text="Delay: 0s"
+    android:textColor="@android:color/white"
+    android:textStyle="bold"
+    android:textSize="16sp"
+    android:layout_marginTop="16dp"
+    android:layout_marginBottom="8dp" />
 
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:layout_marginTop="16dp">
+<SeekBar
+    android:id="@+id/overlaySeekDelay"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:max="10"
+    android:progressTint="@android:color/white"
+    android:thumbTint="@android:color/white"
+    android:background="@android:color/transparent" />
 
-            <Button
-                android:id="@+id/overlayBtnClose"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="Close" />
+<!-- Inline Show Live Preview + Position -->
+<LinearLayout
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:layout_marginTop="16dp"
+    android:background="@android:color/transparent">
 
-            <Space
-                android:layout_width="8dp"
-                android:layout_height="wrap_content" />
+    <Switch
+        android:id="@+id/overlaySwitchShowLive"
+        android:layout_width="0dp"
+        android:layout_weight="1"
+        android:layout_height="wrap_content"
+        android:text="Show Live Preview"
+        android:textColor="@android:color/white"
+        android:checked="true"
+        android:background="@android:color/transparent" />
 
-            <Button
-                android:id="@+id/overlayBtnSave"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="Save" />
-        </LinearLayout>
+    <Space
+        android:layout_width="8dp"
+        android:layout_height="wrap_content" />
 
-    </LinearLayout>
-</ScrollView>
+    <Button
+        android:id="@+id/overlayBtnLivePosition"
+        android:layout_width="0dp"
+        android:layout_weight="1"
+        android:layout_height="wrap_content"
+        android:text="Top Right"
+        android:backgroundTint="#33FFFFFF"
+        android:textColor="@android:color/white"
+        android:enabled="true" />
+</LinearLayout>
+
+<!-- Save -->
+<Button
+    android:id="@+id/overlayBtnSave"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:text="Save"
+    android:textStyle="bold"
+    android:layout_marginTop="24dp"
+    android:backgroundTint="#FF9800"
+    android:textColor="@android:color/white"
+    android:padding="8dp"
+    android:background="@android:color/transparent" />
+
+</LinearLayout>
+    </ScrollView>

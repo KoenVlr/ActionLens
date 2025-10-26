@@ -299,83 +299,79 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // --- Overlay: show/hide with slide from visual bottom ---
+    // --- Overlay: show/hide with slide from bottom ---
     private fun toggleSettingsOverlay() {
         if (overlayVisible) hideSettingsOverlay() else showSettingsOverlay()
     }
 
     private fun showSettingsOverlay() {
         overlayVisible = true
+
         // Load current settings into controls
         populateOverlayFromStore()
 
-        binding.overlayScrim.visibility = View.VISIBLE
-        binding.overlayScrim.alpha = 0f
-        binding.overlayScrim.animate().alpha(1f).setDuration(200).start()
+        val overlay = findViewById<View>(R.id.settingsOverlay)
+        val sheet = findViewById<View>(R.id.settingsSheet)
 
-        // Ensure sheet is measured before animation
-        binding.settingsSheet.visibility = View.VISIBLE
-        binding.settingsSheet.post {
-            setSheetProgress(0f, animate = false)
-            setSheetProgress(1f, animate = true)
+        overlay.visibility = View.VISIBLE
+        overlay.alpha = 0f
+        sheet.translationY = sheet.height.toFloat()
+
+        // Animate overlay fade + sheet slide up
+        overlay.animate()
+            .alpha(1f)
+            .setDuration(200)
+            .start()
+
+        sheet.post {
+            sheet.animate()
+                .translationY(0f)
+                .setDuration(250)
+                .setInterpolator(DecelerateInterpolator())
+                .start()
         }
 
-        // Dismiss when scrim tapped
-        binding.overlayScrim.setOnClickListener { hideSettingsOverlay() }
+        // Tap outside to dismiss
+        findViewById<View>(R.id.overlayDismissArea).setOnClickListener {
+            hideSettingsOverlay()
+        }
     }
 
     private fun hideSettingsOverlay() {
         overlayVisible = false
-        binding.overlayScrim.animate().alpha(0f).setDuration(200)
+
+        val overlay = findViewById<View>(R.id.settingsOverlay)
+        val sheet = findViewById<View>(R.id.settingsSheet)
+
+        // Animate out
+        sheet.animate()
+            .translationY(sheet.height.toFloat())
+            .setDuration(250)
+            .setInterpolator(DecelerateInterpolator())
             .withEndAction {
-                binding.overlayScrim.visibility = View.GONE
-            }.start()
-        setSheetProgress(0f, animate = true) {
-            binding.settingsSheet.visibility = View.GONE
-        }
+                overlay.animate()
+                    .alpha(0f)
+                    .setDuration(200)
+                    .withEndAction {
+                        overlay.visibility = View.GONE
+                    }
+                    .start()
+            }
+            .start()
     }
 
-    /**
-     * progress: 0f (off-screen) -> 1f (on-screen)
-     * Animates along the local "bottom" axis depending on current rotation.
-     */
+    // Optional helper (for rotation logic compatibility)
     private fun setSheetProgress(progress: Float, animate: Boolean, end: (() -> Unit)? = null) {
-        val corrected = currentUiRotation.let { if (it == -1) 0 else (360 - it) % 360 }
-        val sheet = binding.settingsSheet
-
-        val (tx, ty) = when (corrected) {
-            0 -> {
-                // Slide up from bottom: translateY from sheet.height to 0
-                val h = sheet.height.toFloat()
-                0f to (h * (1f - progress))
-            }
-            90 -> {
-                // Rotate 90: visual bottom is right; slide from right -> left: translateX from +sheet.width to 0
-                val w = sheet.width.toFloat()
-                (w * (1f - progress)) to 0f
-            }
-            180 -> {
-                // Rotate 180: visual bottom is top; slide from top down: translateY from -sheet.height to 0
-                val h = sheet.height.toFloat()
-                0f to (-h * (1f - progress))
-            }
-            else -> {
-                // 270: visual bottom is left; slide from left -> right: translateX from -sheet.width to 0
-                val w = sheet.width.toFloat()
-                (-w * (1f - progress)) to 0f
-            }
-        }
-
+        val sheet = findViewById<View>(R.id.settingsSheet)
+        val ty = sheet.height * (1f - progress)
         if (animate) {
             sheet.animate()
-                .translationX(tx)
                 .translationY(ty)
                 .setDuration(250)
                 .setInterpolator(DecelerateInterpolator())
                 .withEndAction { end?.invoke() }
                 .start()
         } else {
-            sheet.translationX = tx
             sheet.translationY = ty
             end?.invoke()
         }
@@ -400,46 +396,35 @@ class MainActivity : AppCompatActivity() {
     private var ovLiveCorner = SettingsStore.LiveOverlayCorner.TOP_RIGHT
 
     private fun initOverlayControls() {
-        overlayResolutionSpinner = findViewById(R.id.overlaySpinnerResolution)
-        overlayFpsSpinner = findViewById(R.id.overlaySpinnerFps)
+        val groupResolution: RadioGroup = findViewById(R.id.groupResolution)
+        val groupFps: RadioGroup = findViewById(R.id.groupFps)
         overlayDelaySeekBar = findViewById(R.id.overlaySeekDelay)
         overlayDelayLabel = findViewById(R.id.overlayTextDelay)
         overlayShowLiveSwitch = findViewById(R.id.overlaySwitchShowLive)
         overlayLivePositionButton = findViewById(R.id.overlayBtnLivePosition)
         overlaySaveButton = findViewById(R.id.overlayBtnSave)
-        overlayCloseButton = findViewById(R.id.overlayBtnClose)
 
-        // Spinners content
-        val resolutions = listOf("1280x720", "1920x1080", "640x480")
-        val resAdapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, resolutions)
-        resAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
-        overlayResolutionSpinner.adapter = resAdapter
-
-        val fpsOptions = listOf(24, 30, 60)
-        val fpsAdapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, fpsOptions)
-        fpsAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
-        overlayFpsSpinner.adapter = fpsAdapter
-
-        // Listeners
-        overlayResolutionSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-            override fun onItemSelected(parent: AdapterView<*>?, v: View?, pos: Int, id: Long) {
-                val (w, h) = parseResolution(resolutions[pos])
-                ovWidth = w
-                ovHeight = h
-                updateDelayMax()
+        // Resolution
+        groupResolution.setOnCheckedChangeListener { _, id ->
+            when (id) {
+                R.id.btnRes720 -> { ovWidth = 1280; ovHeight = 720 }
+                R.id.btnRes1080 -> { ovWidth = 1920; ovHeight = 1080 }
+                R.id.btnRes480 -> { ovWidth = 640; ovHeight = 480 }
             }
-            override fun onNothingSelected(p0: AdapterView<*>?) {}
+            updateDelayMax()
         }
 
-        overlayFpsSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-            override fun onItemSelected(parent: AdapterView<*>?, v: View?, pos: Int, id: Long) {
-                val fpsOptionsLocal = listOf(24, 30, 60)
-                ovFps = fpsOptionsLocal[pos]
-                updateDelayMax()
+        // FPS
+        groupFps.setOnCheckedChangeListener { _, id ->
+            when (id) {
+                R.id.btnFps24 -> ovFps = 24
+                R.id.btnFps30 -> ovFps = 30
+                R.id.btnFps60 -> ovFps = 60
             }
-            override fun onNothingSelected(p0: AdapterView<*>?) {}
+            updateDelayMax()
         }
 
+        // Delay
         overlayDelaySeekBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(sb: SeekBar?, value: Int, fromUser: Boolean) {
                 ovDelaySeconds = value
@@ -449,24 +434,25 @@ class MainActivity : AppCompatActivity() {
             override fun onStopTrackingTouch(sb: SeekBar?) {}
         })
 
+        // --- Live preview switch ---
         overlayShowLiveSwitch.setOnCheckedChangeListener { _, isChecked ->
             ovShowLive = isChecked
             overlayLivePositionButton.isEnabled = isChecked
         }
 
+        // Looping through corners
         overlayLivePositionButton.setOnClickListener {
-            val options = arrayOf("Top Left", "Top Right", "Bottom Left", "Bottom Right")
-            val current = ovLiveCorner.ordinal
-            AlertDialog.Builder(this)
-                .setTitle("Select Live Preview Position")
-                .setSingleChoiceItems(options, current) { dialog, which ->
-                    ovLiveCorner = SettingsStore.LiveOverlayCorner.values()[which]
-                    overlayLivePositionButton.text = "Live Position: ${options[which]}"
-                    dialog.dismiss()
-                }
-                .show()
+            val next = when (ovLiveCorner) {
+                SettingsStore.LiveOverlayCorner.TOP_LEFT -> SettingsStore.LiveOverlayCorner.TOP_RIGHT
+                SettingsStore.LiveOverlayCorner.TOP_RIGHT -> SettingsStore.LiveOverlayCorner.BOTTOM_RIGHT
+                SettingsStore.LiveOverlayCorner.BOTTOM_RIGHT -> SettingsStore.LiveOverlayCorner.BOTTOM_LEFT
+                SettingsStore.LiveOverlayCorner.BOTTOM_LEFT -> SettingsStore.LiveOverlayCorner.TOP_LEFT
+            }
+            ovLiveCorner = next
+            overlayLivePositionButton.text = cornerLabel(next)
         }
 
+        // Save
         overlaySaveButton.setOnClickListener {
             val sNew = SettingsStore.Settings(
                 width = ovWidth,
@@ -479,18 +465,13 @@ class MainActivity : AppCompatActivity() {
             )
             SettingsStore.save(this, sNew)
             hideSettingsOverlay()
-            // Apply immediately
             applySettingsIfChanged()
         }
 
-
-        overlayCloseButton.setOnClickListener {
-            hideSettingsOverlay()
-        }
-
-        // Initial population
+        // Populate saved values
         populateOverlayFromStore()
     }
+
 
     private fun populateOverlayFromStore() {
         val s = SettingsStore.load(this)
@@ -501,18 +482,30 @@ class MainActivity : AppCompatActivity() {
         ovShowLive = s.showLiveOverlay
         ovLiveCorner = s.liveOverlayCorner
 
-        val resolutions = listOf("1280x720", "1920x1080", "640x480")
-        val fpsOptions = listOf(24, 30, 60)
+        // Resolution preselect
+        val groupResolution: RadioGroup = findViewById(R.id.groupResolution)
+        when ("${ovWidth}x${ovHeight}") {
+            "1920x1080" -> groupResolution.check(R.id.btnRes1080)
+            "1280x720" -> groupResolution.check(R.id.btnRes720)
+            "640x480" -> groupResolution.check(R.id.btnRes480)
+        }
 
-        overlayResolutionSpinner.setSelection(resolutions.indexOf("${ovWidth}x$ovHeight").coerceAtLeast(0))
-        overlayFpsSpinner.setSelection(fpsOptions.indexOf(ovFps).coerceAtLeast(0))
+        // FPS preselect
+        val groupFps: RadioGroup = findViewById(R.id.groupFps)
+        when (ovFps) {
+            24 -> groupFps.check(R.id.btnFps24)
+            30 -> groupFps.check(R.id.btnFps30)
+            60 -> groupFps.check(R.id.btnFps60)
+        }
+
+        // Delay and switch
         overlayDelaySeekBar.progress = ovDelaySeconds
         overlayDelayLabel.text = "Delay: ${ovDelaySeconds}s"
         updateDelayMax()
 
         overlayShowLiveSwitch.isChecked = ovShowLive
         overlayLivePositionButton.isEnabled = ovShowLive
-        overlayLivePositionButton.text = "Live Position: ${cornerLabel(ovLiveCorner)}"
+        overlayLivePositionButton.text = "${cornerLabel(ovLiveCorner)}"
     }
 
     /** Updates the slider’s maximum based on current resolution & fps. */
